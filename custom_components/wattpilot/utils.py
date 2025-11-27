@@ -101,36 +101,49 @@ def PropertyUpdateHandler(hass: HomeAssistant, entry_id: str, identifier: str, v
         #_LOGGER.debug("%s - PropertyUpdateHandler: 'self' execute async", entry_id)
         if entry_id in hass.data[DOMAIN]:
             asyncio.run_coroutine_threadsafe(async_PropertyUpdateHandler(hass, entry_id, identifier, value), hass.loop)
+        else:
+            _LOGGER.warning("%s - PropertyUpdateHandler: entry_id not found in data store, skipping update for %s", entry_id, identifier)
     except Exception as e:
         _LOGGER.error("%s - PropertyUpdateHandler: Could not 'self' execute async: %s (%s.%s)", entry_id, str(e), e.__class__.__module__, type(e).__name__)
-        return default
 
 
 async def async_PropertyUpdateHandler(hass: HomeAssistant, entry_id: str, identifier: str, value: str) -> None:
     """Asnyc: Watches on property updates and executes corresponding action"""
     try:
         #_LOGGER.debug("%s - async_PropertyUpdateHandler: get entry_data", entry_id)
+        if entry_id not in hass.data.get(DOMAIN, {}):
+            _LOGGER.warning("%s - async_PropertyUpdateHandler: entry_id not found in data store, skipping update for %s", entry_id, identifier)
+            return
+            
         entry_data=hass.data[DOMAIN][entry_id]
        
         entity=entry_data[CONF_PUSH_ENTITIES].get(identifier, None)
         if not entity is None:
-            hass.async_create_task(entity.async_local_push(value))
+            try:
+                await entity.async_local_push(value)
+            except Exception as entity_e:
+                _LOGGER.error("%s - async_PropertyUpdateHandler: Failed to push update to entity %s: %s (%s.%s)", entry_id, identifier, str(entity_e), entity_e.__class__.__module__, type(entity_e).__name__)
 
         if identifier in EVENT_PROPS:
-            charger_id = str(entry_data[CONF_PARAMS].get(CONF_FRIENDLY_NAME, entry_data[CONF_PARAMS].get(CONF_IP_ADDRESS, DEFAULT_NAME)))
-            data = {
-              "charger_id": charger_id,
-              "entry_id": entry_id,
-              "property": identifier,
-              "value": value
-                    }
-            hass.bus.fire(EVENT_PROPS_ID,data)
+            try:
+                charger_id = str(entry_data[CONF_PARAMS].get(CONF_FRIENDLY_NAME, entry_data[CONF_PARAMS].get(CONF_IP_ADDRESS, DEFAULT_NAME)))
+                data = {
+                  "charger_id": charger_id,
+                  "entry_id": entry_id,
+                  "property": identifier,
+                  "value": value
+                        }
+                hass.bus.fire(EVENT_PROPS_ID,data)
+            except Exception as event_e:
+                _LOGGER.error("%s - async_PropertyUpdateHandler: Failed to fire event for %s: %s (%s.%s)", entry_id, identifier, str(event_e), event_e.__class__.__module__, type(event_e).__name__)
 
         if entry_data.get(CONF_DBG_PROPS, False):
-            hass.async_create_task(async_PropertyDebug(identifier, value, entry_data.get(CONF_DBG_PROPS)))
+            try:
+                await async_PropertyDebug(identifier, value, entry_data.get(CONF_DBG_PROPS))
+            except Exception as debug_e:
+                _LOGGER.debug("%s - async_PropertyUpdateHandler: Failed to debug property %s: %s", entry_id, identifier, str(debug_e))
     except Exception as e:
-        _LOGGER.error("%s - PropertyUpdateHandler: Could not 'self' execute async: %s (%s.%s)", entry_id, str(e), e.__class__.__module__, type(e).__name__)
-        return default
+        _LOGGER.error("%s - async_PropertyUpdateHandler: Could not execute property update handler: %s (%s.%s)", entry_id, str(e), e.__class__.__module__, type(e).__name__)
 
 
 async def async_GetChargerProp(charger, identifier: str, default=None):

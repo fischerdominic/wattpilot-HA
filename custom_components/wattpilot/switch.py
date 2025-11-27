@@ -86,14 +86,17 @@ class ChargerSwitch(ChargerPlatformEntity):
     async def _async_update_validate_platform_state(self, state=None):
         """Async: Validate the given state for switch specific requirements"""
         try:
-            if str(state) in [ STATE_ON, STATE_OFF, STATE_UNKNOWN ]:
+            # Handle None and 'unknown' strings
+            if state is None or str(state).lower() in ['none', 'unknown']:
+                state = STATE_UNKNOWN
+            elif str(state) in [ STATE_ON, STATE_OFF, STATE_UNKNOWN ]:
                 pass
             elif str(state).lower() == 'true':
                 state = STATE_ON
             elif str(state).lower() == 'false':
                 state = STATE_OFF
             else:
-                _LOGGER.warning("%s - %s: _async_update_validate_platform_state failed: state %s not valid for switch platform", self._charger_id, self._identifier, state)
+                _LOGGER.warning("%s - %s: _async_update_validate_platform_state: state %s not valid for switch platform, using UNKNOWN", self._charger_id, self._identifier, state)
                 state = STATE_UNKNOWN
 
             if state == STATE_ON and self._entity_cfg.get('invert', False):
@@ -105,7 +108,7 @@ class ChargerSwitch(ChargerPlatformEntity):
             return state
         except Exception as e:
             _LOGGER.error("%s - %s: _async_update_validate_platform_state failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
-            return None
+            return STATE_UNKNOWN
 
 
     @property

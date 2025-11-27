@@ -318,18 +318,28 @@ class ChargerPlatformEntity(Entity):
                 state = getattr(self._charger,self._identifier,self._default_state)
             elif self._source == 'namespacelist':
                 state = await async_GetChargerProp(self._charger,self._identifier,self._default_state)
-                state = state[int(self._namespace_id)]
-                _LOGGER.debug("%s - %s: async_local_poll namespace pre validate state of %s: %s", self._charger_id, self._identifier, self._attr_unique_id, state)
-                state = await self._async_update_validate_property(state)
-                _LOGGER.debug("%s - %s: async_local_poll namespace post validate state of %s: %s", self._charger_id, self._identifier, self._attr_unique_id, state)
+                if state is None:
+                    _LOGGER.warning("%s - %s: async_local_poll: Could not get property value, using default", self._charger_id, self._identifier)
+                    state = self._default_state
+                elif isinstance(state, list) and len(state) > int(self._namespace_id):
+                    state = state[int(self._namespace_id)]
+                    _LOGGER.debug("%s - %s: async_local_poll namespace pre validate state of %s: %s", self._charger_id, self._identifier, self._attr_unique_id, state)
+                    state = await self._async_update_validate_property(state)
+                    _LOGGER.debug("%s - %s: async_local_poll namespace post validate state of %s: %s", self._charger_id, self._identifier, self._attr_unique_id, state)
+                else:
+                    _LOGGER.warning("%s - %s: async_local_poll: Namespace index out of range, using default", self._charger_id, self._identifier)
+                    state = self._default_state
             elif self._source == 'property':
                 state = await async_GetChargerProp(self._charger,self._identifier,self._default_state)
-                state = await self._async_update_validate_property(state)
+                if state is not None:
+                    state = await self._async_update_validate_property(state)
+                else:
+                    _LOGGER.warning("%s - %s: async_local_poll: Could not get property value, using default", self._charger_id, self._identifier)
+                    state = self._default_state
            
             state = await self._async_update_validate_platform_state(state)
-            if not state is None:
-                setattr(self, self._state_attr, state)
-                self.async_write_ha_state()
+            setattr(self, self._state_attr, state)
+            self.async_write_ha_state()
             #_LOGGER.debug("%s - %s: async_local_poll complete: %s", self._charger_id, self._identifier, state)
         except Exception as e:
             _LOGGER.error("%s - %s: async_local_poll failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
@@ -344,18 +354,25 @@ class ChargerPlatformEntity(Entity):
             if self._source == 'attribute':
                 pass
             elif self._source == 'namespacelist':
-                state = state[int(self._namespace_id)]
-                state = await self._async_update_validate_property(state)
+                if state is not None and isinstance(state, list) and len(state) > int(self._namespace_id):
+                    state = state[int(self._namespace_id)]
+                    state = await self._async_update_validate_property(state)
+                else:
+                    _LOGGER.warning("%s - %s: async_local_push: Invalid namespace state, falling back to poll", self._charger_id, self._identifier)
+                    await self.hass.async_create_task(self.async_local_poll())
+                    return
             elif self._source == 'property':
-                state = await self._async_update_validate_property(state)
+                if state is not None:
+                    state = await self._async_update_validate_property(state)
+                else:
+                    _LOGGER.warning("%s - %s: async_local_push: Received None state, falling back to poll", self._charger_id, self._identifier)
+                    await self.hass.async_create_task(self.async_local_poll())
+                    return
             
             state = await self._async_update_validate_platform_state(state)
-            if not state is None:
-                setattr(self, self._state_attr, state)
-                self.async_write_ha_state()
-                #_LOGGER.debug("%s - %s: async_local_push complete: %s", self._charger_id, self._identifier, state)
-            else:
-                await self.hass.async_create_task(self.async_local_poll())                
+            setattr(self, self._state_attr, state)
+            self.async_write_ha_state()
+            #_LOGGER.debug("%s - %s: async_local_push complete: %s", self._charger_id, self._identifier, state)                
         except Exception as e:
             if type(e).__name__ == 'NoEntitySpecifiedError' and initwait == False:
                 _LOGGER.debug("%s - %s: async_local_push: wait and retry once for setup init delay", self._charger_id, self._identifier)
@@ -363,4 +380,10 @@ class ChargerPlatformEntity(Entity):
                 await self.async_local_push(state,True)
             else:
                 _LOGGER.error("%s - %s: async_local_push failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
+                # Try to recover by polling
+                try:
+                    _LOGGER.info("%s - %s: async_local_push: Attempting to recover by polling", self._charger_id, self._identifier)
+                    await self.hass.async_create_task(self.async_local_poll())
+                except Exception as poll_e:
+                    _LOGGER.error("%s - %s: async_local_push: Recovery poll also failed: %s", self._charger_id, self._identifier, str(poll_e))
 

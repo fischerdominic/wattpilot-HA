@@ -104,8 +104,29 @@ class ChargerNumber(ChargerPlatformEntity, NumberEntity):
 
     async def _async_update_validate_platform_state(self, state=None):
         """Async: Validate the given state for sensor specific requirements"""
-        if not self._attr_native_unit_of_measurement is None: self._attr_native_value = state
-        return state
+        try:
+            # Handle None and 'unknown' strings
+            if state is None or str(state).lower() in ['none', 'unknown']:
+                return None  # For number entities, None is acceptable
+            
+            # Try to convert to numeric type
+            if isinstance(state, (int, float)):
+                if not self._attr_native_unit_of_measurement is None: 
+                    self._attr_native_value = state
+                return state
+            else:
+                # Try to parse as number
+                try:
+                    numeric_state = float(state)
+                    if not self._attr_native_unit_of_measurement is None: 
+                        self._attr_native_value = numeric_state
+                    return numeric_state
+                except (ValueError, TypeError):
+                    _LOGGER.warning("%s - %s: _async_update_validate_platform_state: Cannot convert state %s to number", self._charger_id, self._identifier, state)
+                    return None
+        except Exception as e:
+            _LOGGER.error("%s - %s: _async_update_validate_platform_state failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
+            return None
 
 
     async def async_set_native_value(self, value) -> None:

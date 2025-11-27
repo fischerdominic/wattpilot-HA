@@ -98,21 +98,34 @@ class ChargerSensor(ChargerPlatformEntity, SensorEntity):
     async def _async_update_validate_platform_state(self, state=None):
         """Async: Validate the given state for sensor specific requirements"""
         try:
-            if state is None or state == 'None':
-                state = STATE_UNKNOWN
+            # Handle None, 'None', 'unknown' strings
+            if state is None or str(state).lower() in ['none', 'unknown']:
+                # For sensors with units (numeric sensors like temperature, energy, power),
+                # native_value should be None
+                if not self._attr_native_unit_of_measurement is None:
+                    return None
+                else:
+                    # For text sensors without units, STATE_UNKNOWN is appropriate
+                    state = STATE_UNKNOWN
             elif hasattr(self,'_html_unescape') and self._html_unescape:
-                state = html.unescape(state)
-            elif not hasattr(self,'_state_enum'):
-                pass
-            elif state in list(self._state_enum.keys()):
-                state = self._state_enum[state]
-            elif state in list(self._state_enum.values()):
-                pass
-            else:
-                _LOGGER.warning("%s - %s: _async_update_validate_platform_state failed: state %s not within enum values: %s", self._charger_id, self._identifier, state, self._state_enum)
-            if not self._attr_native_unit_of_measurement is None: self._attr_native_value = state
+                state = html.unescape(str(state))
+            elif hasattr(self,'_state_enum') and self._state_enum:
+                # Check if state is in enum keys or values
+                if state in list(self._state_enum.keys()):
+                    state = self._state_enum[state]
+                elif state in list(self._state_enum.values()):
+                    pass
+                else:
+                    _LOGGER.warning("%s - %s: _async_update_validate_platform_state: state %s not within enum values: %s, using as-is", self._charger_id, self._identifier, state, self._state_enum)
+            
+            # Set native value for sensors with units
+            if not self._attr_native_unit_of_measurement is None: 
+                self._attr_native_value = state
             return state
         except Exception as e:
             _LOGGER.error("%s - %s: _async_update_validate_platform_state failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
-            return None
+            if not self._attr_native_unit_of_measurement is None:
+                return None
+            else:
+                return STATE_UNKNOWN
 

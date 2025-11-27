@@ -97,17 +97,20 @@ class ChargerSelect(ChargerPlatformEntity, SelectEntity):
     async def _async_update_validate_platform_state(self, state=None):
         """Async: Validate the given state for select specific requirements"""
         try:
-            if state in list(self._opt_dict.keys()):
+            # Handle None and 'unknown' strings
+            if state is None or str(state).lower() in ['none', 'unknown']:
+                state = STATE_UNKNOWN
+            elif state in list(self._opt_dict.keys()):
                 state = self._opt_dict[state]
             elif state in list(self._opt_dict.values()):
                 pass 
             else:
-                _LOGGER.error("%s - %s: _async_update_validate_platform_state failed: state %s not within options_id values: %s", self._charger_id, self._identifier, state, self._opt_dict)
+                _LOGGER.warning("%s - %s: _async_update_validate_platform_state: state %s not within options_id values: %s, using UNKNOWN", self._charger_id, self._identifier, state, self._opt_dict)
                 state = STATE_UNKNOWN
             return state
         except Exception as e:
             _LOGGER.error("%s - %s: _async_update_validate_platform_state failed: %s (%s.%s)", self._charger_id, self._identifier, str(e), e.__class__.__module__, type(e).__name__)
-            return None
+            return STATE_UNKNOWN
 
 
     async def async_select_option(self, option: str) -> None:
@@ -116,7 +119,7 @@ class ChargerSelect(ChargerPlatformEntity, SelectEntity):
             #_LOGGER.debug("%s - %s: async_select_option: value was changed to: %s", self._charger_id, self._identifier, option)
             key = list(self._opt_dict.keys())[list(self._opt_dict.values()).index(option)] 
             if key is None:
-                _LOGGER.error("%s - %s: async_select_option: option %s not within options_id keys: %s", self._charger_id, self._identifier, state, self._opt_dict)
+                _LOGGER.error("%s - %s: async_select_option: option %s not within options_id keys: %s", self._charger_id, self._identifier, option, self._opt_dict)
                 return None
             _LOGGER.debug("%s - %s: async_select_option: save option key %s", self._charger_id, self._identifier, key)
             await async_SetChargerProp(self._charger,self._identifier,key,force_type=self._set_type)
